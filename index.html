@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RebelGIS - Polygon Viewer</title>
+    <title>Polygon Viewer</title>
 
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -13,17 +13,6 @@
 </head>
 <body>
     <div class="container">
-        <header>
-            <h1>RebelGIS - Polygon Viewer</h1>
-            <div class="controls">
-                <input type="file" id="fileInput" accept=".geojson,.json" />
-                <label for="fileInput" class="file-label">Load GeoJSON File</label>
-                <select id="munrollSelector" disabled>
-                    <option value="">Select MunRoll Column</option>
-                </select>
-            </div>
-        </header>
-
         <div class="main-content">
             <div id="map"></div>
 
@@ -32,11 +21,11 @@
                     <h3>Legend</h3>
                     <div class="legend-item">
                         <span class="legend-color" style="background-color: #3388ff;"></span>
-                        <span>Normal Polygons</span>
+                        <span>Has MunRoll address</span>
                     </div>
                     <div class="legend-item">
                         <span class="legend-color" style="background-color: #ff6b6b;"></span>
-                        <span>#N/A Values</span>
+                        <span>Missing MunRoll address</span>
                     </div>
                 </div>
 
@@ -47,8 +36,6 @@
                 </div>
             </div>
         </div>
-
-        <div id="status"></div>
     </div>
 
     <!-- Leaflet JS -->
