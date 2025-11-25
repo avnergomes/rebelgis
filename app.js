@@ -3,6 +3,11 @@ let map;
 let geojsonLayer;
 let currentGeoJSON;
 const munrollAddressField = 'MunRoll_Property Address';
+const bundledGeojsonFiles = [
+    'geo_part01.geojson',
+    'geo_part02.geojson',
+    'geo_part03.geojson'
+];
 
 // Initialize the map
 function initMap() {
@@ -136,19 +141,58 @@ function handleGeoJSONLoad(geojson) {
 }
 
 async function loadBundledGeoJSON() {
-    try {
-        const response = await fetch('sample_data.geojson');
-        if (!response.ok) {
-            throw new Error(`Failed to load sample data (status ${response.status})`);
-        }
+    const loadedFeatures = [];
+    const statusLines = bundledGeojsonFiles.map(file => `<li>${file}: pending</li>`);
+    const contentDiv = document.getElementById('attributeContent');
+    contentDiv.innerHTML = `
+        <p class="info-text">Loading bundled GeoJSON files...</p>
+        <ul class="info-list">${statusLines.join('')}</ul>
+    `;
 
-        const geojson = await response.json();
-        handleGeoJSONLoad(geojson);
-    } catch (error) {
-        console.error('Error loading bundled GeoJSON:', error);
-        const contentDiv = document.getElementById('attributeContent');
-        contentDiv.innerHTML = `<p class="info-text">${error.message}</p>`;
+    const statusListItems = contentDiv.querySelectorAll('li');
+
+    await Promise.all(bundledGeojsonFiles.map(async (filename, index) => {
+        const statusItem = statusListItems[index];
+        const updateStatus = (text, isError = false) => {
+            statusItem.textContent = `${filename}: ${text}`;
+            statusItem.className = isError ? 'info-error' : '';
+        };
+
+        try {
+            const fileUrl = new URL(filename, window.location.href).toString();
+            updateStatus('loading');
+
+            const response = await fetch(fileUrl, { cache: 'no-cache' });
+            if (!response.ok) {
+                throw new Error(`status ${response.status}`);
+            }
+
+            const geojson = await response.json();
+            if (!Array.isArray(geojson.features)) {
+                throw new Error('missing features array');
+            }
+
+            loadedFeatures.push(...geojson.features);
+            updateStatus('loaded');
+        } catch (error) {
+            console.error(`Error loading bundled GeoJSON (${filename}):`, error);
+            updateStatus('failed', true);
+        }
+    }));
+
+    if (loadedFeatures.length === 0) {
+        const errorMessage = 'Unable to load bundled GeoJSON files.';
+        contentDiv.innerHTML = `<p class="info-text">${errorMessage}</p>`;
+        throw new Error(errorMessage);
     }
+
+    const combinedGeojson = {
+        type: 'FeatureCollection',
+        features: loadedFeatures
+    };
+
+    contentDiv.innerHTML = '<p class="info-text">Click on a polygon to view its attributes</p>';
+    handleGeoJSONLoad(combinedGeojson);
 }
 
 // Initialize map on page load

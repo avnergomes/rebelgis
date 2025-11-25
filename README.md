@@ -24,24 +24,10 @@ Simply open `index.html` in a web browser. You can:
   # Then visit http://localhost:8000
   ```
 
-### 2. Load Your GeoJSON Data
+### 2. Browse the Built-In Data
 
-1. Click the "Load GeoJSON File" button
-2. Select your `.geojson` or `.json` file
-3. The map will automatically display your polygons
-
-### 3. View Attributes
-
-- **Click** on any polygon to see its attributes in the sidebar
-- A popup will also appear on the map with key properties
-- All attributes are displayed in a scrollable panel
-
-### 4. Filter by MunRoll Columns
-
-- The application automatically detects columns starting with "MunRoll"
-- Use the dropdown to select which MunRoll column to analyze
-- Polygons with **#N/A** values will be colored **red**
-- Normal polygons will be colored **blue**
+The app automatically loads the bundled sample files (`geo_part01.geojson`, `geo_part02.geojson`, `geo_part03.geojson`).
+Once they finish loading, pan and zoom the map or click on any polygon to view its attributes in the sidebar.
 
 ## Color Coding
 
@@ -52,11 +38,8 @@ Simply open `index.html` in a web browser. You can:
 
 ## Sample Data
 
-A sample GeoJSON file (`sample_data.geojson`) is included for testing. It contains:
-- 6 sample polygons
-- 2 MunRoll columns (MunRoll_2020, MunRoll_2021)
-- Several records with #N/A values
-- Additional attributes (population, area)
+Three GeoJSON files (`geo_part01.geojson`, `geo_part02.geojson`, `geo_part03.geojson`) are bundled for testing. They combine
+into a single dataset when the app loads so you can explore the entire sample at once.
 
 ## File Structure
 
@@ -65,7 +48,9 @@ rebelgis/
 ├── index.html          # Main HTML file
 ├── app.js              # JavaScript application logic
 ├── styles.css          # Styling and layout
-├── sample_data.geojson # Sample data for testing
+├── geo_part01.geojson  # Sample data (part 1)
+├── geo_part02.geojson  # Sample data (part 2)
+├── geo_part03.geojson  # Sample data (part 3)
 └── README.md           # This file
 ```
 
