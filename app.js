@@ -2,14 +2,7 @@
 let map;
 let geojsonLayer;
 let currentGeoJSON;
-let munrollColumns = [];
-let selectedMunrollColumn = '';
-const sampleDatasets = [
-    {
-        name: 'Sample municipal rolls',
-        file: 'sample_data.geojson'
-    }
-];
+const munrollAddressField = 'MunRoll_Property Address';
 
 // Initialize the map
 function initMap() {
@@ -21,57 +14,6 @@ function initMap() {
         maxZoom: 19
     }).addTo(map);
 
-    updateStatus('Map initialized. Please load a GeoJSON file.');
-}
-
-// Populate bundled dataset selector
-function initDatasetSelector() {
-    const selector = document.getElementById('datasetSelector');
-    selector.innerHTML = '';
-
-    if (sampleDatasets.length === 0) {
-        selector.disabled = true;
-        const placeholder = document.createElement('option');
-        placeholder.value = '';
-        placeholder.textContent = 'No bundled data available';
-        selector.appendChild(placeholder);
-        return;
-    }
-
-    sampleDatasets.forEach(dataset => {
-        const option = document.createElement('option');
-        option.value = dataset.file;
-        option.textContent = dataset.name;
-        selector.appendChild(option);
-    });
-
-    selector.disabled = false;
-}
-
-// Update status message
-function updateStatus(message, type = '') {
-    const statusEl = document.getElementById('status');
-    statusEl.textContent = message;
-    statusEl.className = type;
-}
-
-// Find all columns starting with 'MunRoll' in the GeoJSON
-function findMunrollColumns(geojson) {
-    const columns = new Set();
-
-    if (geojson.features && geojson.features.length > 0) {
-        geojson.features.forEach(feature => {
-            if (feature.properties) {
-                Object.keys(feature.properties).forEach(key => {
-                    if (key.startsWith('MunRoll')) {
-                        columns.add(key);
-                    }
-                });
-            }
-        });
-    }
-
-    return Array.from(columns).sort();
 }
 
 // Check if a value is #N/A
@@ -89,15 +31,14 @@ function isNAValue(value) {
 
 // Style function for polygons
 function styleFeature(feature) {
-    const hasNA = selectedMunrollColumn &&
-                  feature.properties &&
-                  isNAValue(feature.properties[selectedMunrollColumn]);
+    const addressValue = feature.properties ? feature.properties[munrollAddressField] : undefined;
+    const isMissingAddress = addressValue === undefined || addressValue === '' || isNAValue(addressValue);
 
     return {
-        fillColor: hasNA ? '#ff6b6b' : '#3388ff',
+        fillColor: isMissingAddress ? '#ff6b6b' : '#3388ff',
         weight: 2,
         opacity: 1,
-        color: hasNA ? '#cc0000' : '#0066cc',
+        color: isMissingAddress ? '#cc0000' : '#0066cc',
         dashArray: '',
         fillOpacity: 0.6
     };
@@ -157,29 +98,6 @@ function displayAttributes(properties) {
 function onFeatureClick(e) {
     const feature = e.target.feature;
     displayAttributes(feature.properties);
-
-    // Create popup content
-    let popupContent = '<div class="popup-title">Feature Attributes</div>';
-
-    if (feature.properties) {
-        const props = feature.properties;
-        const keys = Object.keys(props).slice(0, 5); // Show first 5 properties
-
-        keys.forEach(key => {
-            const value = props[key];
-            const isNA = isNAValue(value);
-            popupContent += `<strong>${key}:</strong> `;
-            popupContent += isNA ?
-                `<span style="color: #ff6b6b; font-weight: bold;">${value}</span><br>` :
-                `${value}<br>`;
-        });
-
-        if (Object.keys(props).length > 5) {
-            popupContent += `<em>...and ${Object.keys(props).length - 5} more attributes</em>`;
-        }
-    }
-
-    e.target.bindPopup(popupContent).openPopup();
 }
 
 // Attach events to features
@@ -210,143 +128,31 @@ function loadGeoJSON(geojson) {
     }
 }
 
-// Fetch a bundled dataset and render it
-async function fetchAndLoadDataset(datasetPath, label) {
-    updateStatus(`Loading ${label}...`);
-
-    try {
-        const response = await fetch(datasetPath);
-        if (!response.ok) {
-            throw new Error(`Failed to load ${label} (status ${response.status})`);
-        }
-
-        const geojson = await response.json();
-        handleGeoJSONLoad(geojson, label);
-    } catch (error) {
-        console.error('Error fetching dataset:', error);
-        updateStatus(`Error loading ${label}: ${error.message}`, 'error');
-    }
-}
-
-function summarizeLoad(geojson) {
-    const featureCount = geojson.features?.length || 0;
-    const munrollInfo = munrollColumns.length > 0
-        ? ` Found ${munrollColumns.length} MunRoll column(s).`
-        : ' No MunRoll columns found.';
-
-    let naSummary = '';
-    if (selectedMunrollColumn) {
-        const naCount = geojson.features.filter(f =>
-            f.properties && isNAValue(f.properties[selectedMunrollColumn])
-        ).length;
-
-        if (naCount > 0) {
-            naSummary = ` ${naCount} feature(s) with #N/A in ${selectedMunrollColumn}.`;
-        }
-    }
-
-    return `Successfully loaded ${featureCount} feature(s).${munrollInfo}${naSummary}`;
-}
-
-function handleGeoJSONLoad(geojson, sourceLabel) {
+function handleGeoJSONLoad(geojson) {
     currentGeoJSON = geojson;
-
-    // Find MunRoll columns
-    munrollColumns = findMunrollColumns(geojson);
-    updateMunrollSelector(munrollColumns);
 
     // Load to map
     loadGeoJSON(geojson);
-    updateStatus(`${sourceLabel}: ${summarizeLoad(geojson)}`, 'success');
 }
 
-// Update MunRoll selector
-function updateMunrollSelector(columns) {
-    const selector = document.getElementById('munrollSelector');
-    selector.innerHTML = '<option value="">Select MunRoll Column</option>';
-
-    columns.forEach(col => {
-        const option = document.createElement('option');
-        option.value = col;
-        option.textContent = col;
-        selector.appendChild(option);
-    });
-
-    if (columns.length > 0) {
-        selector.disabled = false;
-        // Auto-select first column
-        selector.value = columns[0];
-        selectedMunrollColumn = columns[0];
-    } else {
-        selector.disabled = true;
-        selectedMunrollColumn = '';
-    }
-}
-
-// Handle MunRoll column selection change
-document.getElementById('munrollSelector').addEventListener('change', (e) => {
-    selectedMunrollColumn = e.target.value;
-
-    if (currentGeoJSON) {
-        loadGeoJSON(currentGeoJSON);
-        updateStatus(`Displaying polygons colored by ${selectedMunrollColumn || 'default'}`, 'success');
-    }
-});
-
-// Handle bundled dataset selection
-document.getElementById('datasetSelector').addEventListener('change', (e) => {
-    const selectedFile = e.target.value;
-    const dataset = sampleDatasets.find(d => d.file === selectedFile);
-
-    if (dataset) {
-        fetchAndLoadDataset(dataset.file, dataset.name);
-    }
-});
-
-// Handle file input
-document.getElementById('fileInput').addEventListener('change', (e) => {
-    const file = e.target.files[0];
-
-    if (!file) {
-        return;
-    }
-
-    updateStatus('Loading file...', '');
-
-    const reader = new FileReader();
-
-    reader.onload = (event) => {
-        try {
-            const geojson = JSON.parse(event.target.result);
-
-            // Validate GeoJSON
-            if (!geojson.type || !geojson.features) {
-                throw new Error('Invalid GeoJSON format');
-            }
-
-            handleGeoJSONLoad(geojson, 'Custom upload');
-
-        } catch (error) {
-            updateStatus(`Error loading file: ${error.message}`, 'error');
-            console.error('Error parsing GeoJSON:', error);
+async function loadBundledGeoJSON() {
+    try {
+        const response = await fetch('sample_data.geojson');
+        if (!response.ok) {
+            throw new Error(`Failed to load sample data (status ${response.status})`);
         }
-    };
 
-    reader.onerror = () => {
-        updateStatus('Error reading file', 'error');
-    };
-
-    reader.readAsText(file);
-});
+        const geojson = await response.json();
+        handleGeoJSONLoad(geojson);
+    } catch (error) {
+        console.error('Error loading bundled GeoJSON:', error);
+        const contentDiv = document.getElementById('attributeContent');
+        contentDiv.innerHTML = `<p class="info-text">${error.message}</p>`;
+    }
+}
 
 // Initialize map on page load
 document.addEventListener('DOMContentLoaded', () => {
     initMap();
-    initDatasetSelector();
-
-    // Load the first bundled dataset by default
-    if (sampleDatasets.length > 0) {
-        document.getElementById('datasetSelector').value = sampleDatasets[0].file;
-        fetchAndLoadDataset(sampleDatasets[0].file, sampleDatasets[0].name);
-    }
+    loadBundledGeoJSON();
 });
