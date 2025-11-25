@@ -1,47 +1,320 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Polygon Viewer</title>
+    <meta charset="UTF-8" />
+    <title>Geo Feature Explorer</title>
 
     <!-- Leaflet CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+        crossorigin=""
+    />
 
-    <!-- Custom CSS -->
-    <link rel="stylesheet" href="styles.css">
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+        }
+        #map {
+            height: 100%;
+            width: 100%;
+        }
+        .controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 1000;
+            background: white;
+            padding: 8px 10px;
+            border-radius: 4px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+            font-family: system-ui, sans-serif;
+            font-size: 13px;
+            max-height: 50vh;
+            overflow: auto;
+        }
+        .controls label {
+            font-weight: 600;
+        }
+        .controls select {
+            margin-top: 4px;
+            width: 220px;
+        }
+        .controls .meta {
+            margin-top: 6px;
+            font-size: 12px;
+            color: #333;
+        }
+        .info {
+            padding: 6px 8px;
+            font: 12px/1.2 system-ui, sans-serif;
+            background: rgba(255,255,255,0.9);
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+            border-radius: 4px;
+        }
+        .info h4 {
+            margin: 0 0 4px;
+        }
+        .info ul {
+            padding-left: 16px;
+            margin: 4px 0 0;
+        }
+        .legend {
+            line-height: 18px;
+        }
+        .legend i {
+            width: 18px;
+            height: 18px;
+            float: left;
+            margin-right: 6px;
+            opacity: 0.7;
+        }
+    </style>
 </head>
 <body>
-    <div class="container">
-        <div class="main-content">
-            <div id="map"></div>
 
-            <div id="sidebar">
-                <div class="legend">
-                    <h3>Legend</h3>
-                    <div class="legend-item">
-                        <span class="legend-color" style="background-color: #3388ff;"></span>
-                        <span>Has MunRoll address</span>
-                    </div>
-                    <div class="legend-item">
-                        <span class="legend-color" style="background-color: #ff6b6b;"></span>
-                        <span>Missing MunRoll address</span>
-                    </div>
-                </div>
+<div id="map"></div>
 
-                <div id="attributePanel">
-                    <h3>Attributes</h3>
-                    <p class="info-text">Click on a polygon to view its attributes</p>
-                    <div id="attributeContent"></div>
-                </div>
-            </div>
-        </div>
-    </div>
+<!-- Control to choose which property to visualize -->
+<div class="controls">
+    <label for="propertySelect">Variable to visualize:</label><br>
+    <select id="propertySelect"></select>
+    <div class="meta" id="featureMeta"></div>
+</div>
 
-    <!-- Leaflet JS -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<!-- Leaflet JS -->
+<script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+></script>
 
-    <!-- Custom JS -->
-    <script src="app.js"></script>
+<script>
+    // 1. Initialize the map
+    const map = L.map('map', {
+        center: [0, 0],
+        zoom: 2
+    });
+
+    // Base map
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    const propertySelect = document.getElementById('propertySelect');
+    const meta = document.getElementById('featureMeta');
+
+    let currentProperty = null;
+    let geojsonLayer = null;
+    let geojsonData = null;
+    let breaks = [];
+
+    const geojsonPaths = [
+        'data/geo_part01.geojson',
+        'data/geo_part02.geojson',
+        'data/geo_part03.geojson'
+    ];
+
+    // Helper to read and combine all parts
+    async function loadGeojsonParts() {
+        const responses = await Promise.all(geojsonPaths.map(path => fetch(path)));
+        const jsons = await Promise.all(responses.map(r => r.json()));
+        return jsons.reduce((acc, curr) => {
+            acc.features = acc.features.concat(curr.features || []);
+            return acc;
+        }, { type: 'FeatureCollection', features: [] });
+    }
+
+    function getNumericProperties(featureCollection) {
+        const numericKeys = new Set();
+        featureCollection.features.forEach(f => {
+            Object.entries(f.properties || {}).forEach(([key, value]) => {
+                if (value !== null && value !== '' && !Array.isArray(value) && !isNaN(Number(value))) {
+                    numericKeys.add(key);
+                }
+            });
+        });
+        return Array.from(numericKeys).sort();
+    }
+
+    // 3. Color ramp and style functions
+    function getColor(d) {
+        if (d == null || isNaN(d)) return '#cccccc';
+        return d > breaks[4] ? '#800026' :
+               d > breaks[3] ? '#BD0026' :
+               d > breaks[2] ? '#E31A1C' :
+               d > breaks[1] ? '#FC4E2A' :
+               d > breaks[0] ? '#FD8D3C' :
+                               '#FEB24C';
+    }
+
+    function computeBreaks(featureCollection, property) {
+        const values = featureCollection.features
+            .map(f => f.properties[property])
+            .filter(v => v !== null && v !== undefined && !isNaN(v))
+            .map(Number)
+            .sort((a, b) => a - b);
+
+        if (!values.length) return [0, 1, 2, 3, 4];
+
+        const n = values.length;
+
+        function quantile(q) {
+            const pos = (n - 1) * q;
+            const base = Math.floor(pos);
+            const rest = pos - base;
+            if (values[base + 1] !== undefined) {
+                return values[base] + rest * (values[base + 1] - values[base]);
+            } else {
+                return values[base];
+            }
+        }
+
+        // 5 class quantiles
+        return [
+            quantile(0.20),
+            quantile(0.40),
+            quantile(0.60),
+            quantile(0.80),
+            quantile(1.00)
+        ];
+    }
+
+    function styleFeature(feature) {
+        const value = Number(feature.properties[currentProperty]);
+        return {
+            fillColor: getColor(value),
+            weight: 1,
+            opacity: 1,
+            color: '#555',
+            fillOpacity: 0.7
+        };
+    }
+
+    // 4. Info control (top-right)
+    const info = L.control({position: 'topright'});
+    info.onAdd = function () {
+        this._div = L.DomUtil.create('div', 'info');
+        this.update();
+        return this._div;
+    };
+    info.update = function (props) {
+        const details = props ? `
+            <b>ID:</b> ${props.id ?? 'n/a'}<br/>
+            <b>Country:</b> ${props.Country ?? 'n/a'}<br/>
+            <b>Admin Level 1:</b> ${props.Admin_Level_1 ?? 'n/a'}<br/>
+            <b>Unit:</b> ${props.Unit ?? 'n/a'}<br/>
+            <b>${currentProperty}:</b> ${props[currentProperty] ?? 'n/a'}
+        ` : 'Hover over a polygon';
+
+        this._div.innerHTML = '<h4>Feature data</h4>' + details;
+    };
+    info.addTo(map);
+
+    // 5. Legend control (bottom-right)
+    const legend = L.control({position: 'bottomright'});
+    legend.onAdd = function () {
+        this._div = L.DomUtil.create('div', 'info legend');
+        return this._div;
+    };
+    legend.addTo(map);
+
+    function updateLegend() {
+        if (!breaks || !breaks.length) {
+            legend._div.innerHTML = 'No data';
+            return;
+        }
+        const desc = currentProperty ? `Quantile breaks for <strong>${currentProperty}</strong>` : '';
+        let labels = [];
+        for (let i = 0; i < breaks.length; i++) {
+            const from = i === 0 ? breaks[0] : breaks[i - 1];
+            const to = breaks[i];
+            const mid = (from + to) / 2;
+            labels.push(
+                '<i style="background:' + getColor(mid) + '"></i> ' +
+                from.toFixed(2) + ' – ' + to.toFixed(2)
+            );
+        }
+        legend._div.innerHTML =
+            '<b>' + (currentProperty ?? 'Choose a variable') + '</b><br/>' +
+            (desc ? '<small>' + desc + '</small><br/><br/>' : '') +
+            labels.join('<br>');
+    }
+
+    // 6. Load the GeoJSON parts and render
+    loadGeojsonParts()
+        .then(data => {
+            geojsonData = data;
+
+            const numericProps = getNumericProperties(geojsonData);
+            numericProps.forEach((prop, idx) => {
+                const option = document.createElement('option');
+                option.value = prop;
+                option.textContent = prop;
+                if (idx === 0) {
+                    option.selected = true;
+                    currentProperty = prop;
+                }
+                propertySelect.appendChild(option);
+            });
+
+            breaks = computeBreaks(geojsonData, currentProperty);
+
+            geojsonLayer = L.geoJSON(geojsonData, {
+                style: styleFeature,
+                onEachFeature: function (feature, layer) {
+                    layer.on({
+                        mouseover: function (e) {
+                            const target = e.target;
+                            target.setStyle({
+                                weight: 2,
+                                color: '#000',
+                                fillOpacity: 0.9
+                            });
+                            if (!L.Browser.ie && !L.Browser.opera && !L.Browser.edge) {
+                                target.bringToFront();
+                            }
+                            info.update(feature.properties);
+                        },
+                        mouseout: function (e) {
+                            geojsonLayer.resetStyle(e.target);
+                            info.update();
+                        },
+                        click: function () {
+                            const p = feature.properties;
+                            layer.bindPopup(
+                                '<b>ID:</b> ' + (p.id ?? 'n/a') + '<br/>' +
+                                '<b>Country:</b> ' + (p.Country ?? 'n/a') + '<br/>' +
+                                '<b>Admin Level 1:</b> ' + (p.Admin_Level_1 ?? 'n/a') + '<br/>' +
+                                '<b>' + currentProperty + ':</b> ' + (p[currentProperty] ?? 'n/a')
+                            ).openPopup();
+                        }
+                    });
+                }
+            }).addTo(map);
+
+            map.fitBounds(geojsonLayer.getBounds());
+            updateLegend();
+            meta.innerHTML = `${geojsonData.features.length.toLocaleString()} features loaded. ${numericProps.length} numeric properties available.`;
+        })
+        .catch(err => {
+            console.error('Error loading GeoJSON:', err);
+            meta.textContent = 'Failed to load data.';
+        });
+
+    // 7. Handle column selection changes
+    propertySelect.addEventListener('change', function () {
+        currentProperty = this.value;
+        if (!geojsonData || !geojsonLayer) return;
+
+        breaks = computeBreaks(geojsonData, currentProperty);
+        geojsonLayer.setStyle(styleFeature);
+        updateLegend();
+    });
+</script>
+
 </body>
 </html>
