@@ -4,6 +4,12 @@ let geojsonLayer;
 let currentGeoJSON;
 let munrollColumns = [];
 let selectedMunrollColumn = '';
+const sampleDatasets = [
+    {
+        name: 'Sample municipal rolls',
+        file: 'sample_data.geojson'
+    }
+];
 
 // Initialize the map
 function initMap() {
@@ -16,6 +22,30 @@ function initMap() {
     }).addTo(map);
 
     updateStatus('Map initialized. Please load a GeoJSON file.');
+}
+
+// Populate bundled dataset selector
+function initDatasetSelector() {
+    const selector = document.getElementById('datasetSelector');
+    selector.innerHTML = '';
+
+    if (sampleDatasets.length === 0) {
+        selector.disabled = true;
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = 'No bundled data available';
+        selector.appendChild(placeholder);
+        return;
+    }
+
+    sampleDatasets.forEach(dataset => {
+        const option = document.createElement('option');
+        option.value = dataset.file;
+        option.textContent = dataset.name;
+        selector.appendChild(option);
+    });
+
+    selector.disabled = false;
 }
 
 // Update status message
@@ -180,6 +210,56 @@ function loadGeoJSON(geojson) {
     }
 }
 
+// Fetch a bundled dataset and render it
+async function fetchAndLoadDataset(datasetPath, label) {
+    updateStatus(`Loading ${label}...`);
+
+    try {
+        const response = await fetch(datasetPath);
+        if (!response.ok) {
+            throw new Error(`Failed to load ${label} (status ${response.status})`);
+        }
+
+        const geojson = await response.json();
+        handleGeoJSONLoad(geojson, label);
+    } catch (error) {
+        console.error('Error fetching dataset:', error);
+        updateStatus(`Error loading ${label}: ${error.message}`, 'error');
+    }
+}
+
+function summarizeLoad(geojson) {
+    const featureCount = geojson.features?.length || 0;
+    const munrollInfo = munrollColumns.length > 0
+        ? ` Found ${munrollColumns.length} MunRoll column(s).`
+        : ' No MunRoll columns found.';
+
+    let naSummary = '';
+    if (selectedMunrollColumn) {
+        const naCount = geojson.features.filter(f =>
+            f.properties && isNAValue(f.properties[selectedMunrollColumn])
+        ).length;
+
+        if (naCount > 0) {
+            naSummary = ` ${naCount} feature(s) with #N/A in ${selectedMunrollColumn}.`;
+        }
+    }
+
+    return `Successfully loaded ${featureCount} feature(s).${munrollInfo}${naSummary}`;
+}
+
+function handleGeoJSONLoad(geojson, sourceLabel) {
+    currentGeoJSON = geojson;
+
+    // Find MunRoll columns
+    munrollColumns = findMunrollColumns(geojson);
+    updateMunrollSelector(munrollColumns);
+
+    // Load to map
+    loadGeoJSON(geojson);
+    updateStatus(`${sourceLabel}: ${summarizeLoad(geojson)}`, 'success');
+}
+
 // Update MunRoll selector
 function updateMunrollSelector(columns) {
     const selector = document.getElementById('munrollSelector');
@@ -213,6 +293,16 @@ document.getElementById('munrollSelector').addEventListener('change', (e) => {
     }
 });
 
+// Handle bundled dataset selection
+document.getElementById('datasetSelector').addEventListener('change', (e) => {
+    const selectedFile = e.target.value;
+    const dataset = sampleDatasets.find(d => d.file === selectedFile);
+
+    if (dataset) {
+        fetchAndLoadDataset(dataset.file, dataset.name);
+    }
+});
+
 // Handle file input
 document.getElementById('fileInput').addEventListener('change', (e) => {
     const file = e.target.files[0];
@@ -234,38 +324,7 @@ document.getElementById('fileInput').addEventListener('change', (e) => {
                 throw new Error('Invalid GeoJSON format');
             }
 
-            currentGeoJSON = geojson;
-
-            // Find MunRoll columns
-            munrollColumns = findMunrollColumns(geojson);
-            updateMunrollSelector(munrollColumns);
-
-            // Load to map
-            loadGeoJSON(geojson);
-
-            const featureCount = geojson.features.length;
-            const munrollInfo = munrollColumns.length > 0 ?
-                ` Found ${munrollColumns.length} MunRoll column(s).` :
-                ' No MunRoll columns found.';
-
-            updateStatus(
-                `Successfully loaded ${featureCount} feature(s).${munrollInfo}`,
-                'success'
-            );
-
-            // Count #N/A values if MunRoll column selected
-            if (selectedMunrollColumn) {
-                const naCount = geojson.features.filter(f =>
-                    f.properties && isNAValue(f.properties[selectedMunrollColumn])
-                ).length;
-
-                if (naCount > 0) {
-                    updateStatus(
-                        `Successfully loaded ${featureCount} feature(s). ${naCount} feature(s) with #N/A in ${selectedMunrollColumn}.`,
-                        'success'
-                    );
-                }
-            }
+            handleGeoJSONLoad(geojson, 'Custom upload');
 
         } catch (error) {
             updateStatus(`Error loading file: ${error.message}`, 'error');
@@ -283,4 +342,11 @@ document.getElementById('fileInput').addEventListener('change', (e) => {
 // Initialize map on page load
 document.addEventListener('DOMContentLoaded', () => {
     initMap();
+    initDatasetSelector();
+
+    // Load the first bundled dataset by default
+    if (sampleDatasets.length > 0) {
+        document.getElementById('datasetSelector').value = sampleDatasets[0].file;
+        fetchAndLoadDataset(sampleDatasets[0].file, sampleDatasets[0].name);
+    }
 });

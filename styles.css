@@ -35,6 +35,21 @@ header h1 {
     margin-top: 0.5rem;
 }
 
+.control-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background-color: rgba(255, 255, 255, 0.1);
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+}
+
+.control-group label {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #ecf0f1;
+}
+
 #fileInput {
     display: none;
 }
@@ -53,6 +68,7 @@ header h1 {
     background-color: #2980b9;
 }
 
+#datasetSelector,
 #munrollSelector {
     padding: 0.5rem 1rem;
     border-radius: 4px;
