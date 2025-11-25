@@ -21,32 +21,6 @@
             height: 100%;
             width: 100%;
         }
-        .controls {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            z-index: 1000;
-            background: white;
-            padding: 8px 10px;
-            border-radius: 4px;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.3);
-            font-family: system-ui, sans-serif;
-            font-size: 13px;
-            max-height: 50vh;
-            overflow: auto;
-        }
-        .controls label {
-            font-weight: 600;
-        }
-        .controls select {
-            margin-top: 4px;
-            width: 220px;
-        }
-        .controls .meta {
-            margin-top: 6px;
-            font-size: 12px;
-            color: #333;
-        }
         .info {
             padding: 6px 8px;
             font: 12px/1.2 system-ui, sans-serif;
@@ -71,18 +45,26 @@
             margin-right: 6px;
             opacity: 0.7;
         }
+        .popup-table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+        .popup-table th,
+        .popup-table td {
+            border: 1px solid #ccc;
+            padding: 4px 6px;
+            font-size: 12px;
+            text-align: left;
+        }
+        .popup-table th {
+            background: #f5f5f5;
+            font-weight: 600;
+        }
     </style>
 </head>
 <body>
 
 <div id="map"></div>
-
-<!-- Control to choose which property to visualize -->
-<div class="controls">
-    <label for="propertySelect">Variable to visualize:</label><br>
-    <select id="propertySelect"></select>
-    <div class="meta" id="featureMeta"></div>
-</div>
 
 <!-- Leaflet JS -->
 <script
@@ -104,9 +86,6 @@
         attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
-    const propertySelect = document.getElementById('propertySelect');
-    const meta = document.getElementById('featureMeta');
-
     let currentProperty = null;
     let geojsonLayer = null;
     let geojsonData = null;
@@ -117,6 +96,23 @@
         'data/geo_part02.geojson',
         'data/geo_part03.geojson'
     ];
+
+    // Helper to render a simple meta panel
+    const metaControl = L.control({ position: 'topleft' });
+    metaControl.onAdd = function () {
+        this._div = L.DomUtil.create('div', 'info');
+        this.update();
+        return this._div;
+    };
+    metaControl.update = function (props = {}) {
+        const { featureCount = 0, numericCount = 0, propertyName = '' } = props;
+        this._div.innerHTML = `
+            <div><strong>${featureCount.toLocaleString()} features loaded</strong></div>
+            <div>${numericCount} numeric properties</div>
+            <div>${propertyName ? 'Visualizing: <b>' + propertyName + '</b>' : 'No numeric property found'}</div>
+        `;
+    };
+    metaControl.addTo(map);
 
     // Helper to read and combine all parts
     async function loadGeojsonParts() {
@@ -184,14 +180,25 @@
     }
 
     function styleFeature(feature) {
-        const value = Number(feature.properties[currentProperty]);
+        const value = currentProperty ? Number(feature.properties[currentProperty]) : null;
         return {
-            fillColor: getColor(value),
+            fillColor: currentProperty ? getColor(value) : '#cccccc',
             weight: 1,
             opacity: 1,
             color: '#555',
             fillOpacity: 0.7
         };
+    }
+
+    function buildPropertiesTable(props = {}) {
+        const rows = Object.entries(props)
+            .map(([key, value]) => {
+                const safeValue = value === null || value === undefined || value === '' ? 'n/a' : value;
+                return `<tr><th>${key}</th><td>${safeValue}</td></tr>`;
+            })
+            .join('');
+
+        return `<table class="popup-table">${rows}</table>`;
     }
 
     // 4. Info control (top-right)
@@ -202,15 +209,23 @@
         return this._div;
     };
     info.update = function (props) {
-        const details = props ? `
-            <b>ID:</b> ${props.id ?? 'n/a'}<br/>
-            <b>Country:</b> ${props.Country ?? 'n/a'}<br/>
-            <b>Admin Level 1:</b> ${props.Admin_Level_1 ?? 'n/a'}<br/>
-            <b>Unit:</b> ${props.Unit ?? 'n/a'}<br/>
-            <b>${currentProperty}:</b> ${props[currentProperty] ?? 'n/a'}
-        ` : 'Hover over a polygon';
+        if (!props) {
+            this._div.innerHTML = '<h4>Feature data</h4>Hover over a polygon';
+            return;
+        }
 
-        this._div.innerHTML = '<h4>Feature data</h4>' + details;
+        const summary = [
+            `<b>ID:</b> ${props.id ?? 'n/a'}`,
+            `<b>Country:</b> ${props.Country ?? 'n/a'}`,
+            `<b>Admin Level 1:</b> ${props.Admin_Level_1 ?? 'n/a'}`,
+            `<b>Unit:</b> ${props.Unit ?? 'n/a'}`
+        ];
+
+        if (currentProperty) {
+            summary.push(`<b>${currentProperty}:</b> ${props[currentProperty] ?? 'n/a'}`);
+        }
+
+        this._div.innerHTML = '<h4>Feature data</h4>' + summary.join('<br/>');
     };
     info.addTo(map);
 
@@ -223,11 +238,11 @@
     legend.addTo(map);
 
     function updateLegend() {
-        if (!breaks || !breaks.length) {
-            legend._div.innerHTML = 'No data';
+        if (!currentProperty || !breaks || !breaks.length) {
+            legend._div.innerHTML = 'No numeric data available';
             return;
         }
-        const desc = currentProperty ? `Quantile breaks for <strong>${currentProperty}</strong>` : '';
+        const desc = `Quantile breaks for <strong>${currentProperty}</strong>`;
         let labels = [];
         for (let i = 0; i < breaks.length; i++) {
             const from = i === 0 ? breaks[0] : breaks[i - 1];
@@ -239,8 +254,8 @@
             );
         }
         legend._div.innerHTML =
-            '<b>' + (currentProperty ?? 'Choose a variable') + '</b><br/>' +
-            (desc ? '<small>' + desc + '</small><br/><br/>' : '') +
+            '<b>' + currentProperty + '</b><br/>' +
+            '<small>' + desc + '</small><br/><br/>' +
             labels.join('<br>');
     }
 
@@ -250,18 +265,9 @@
             geojsonData = data;
 
             const numericProps = getNumericProperties(geojsonData);
-            numericProps.forEach((prop, idx) => {
-                const option = document.createElement('option');
-                option.value = prop;
-                option.textContent = prop;
-                if (idx === 0) {
-                    option.selected = true;
-                    currentProperty = prop;
-                }
-                propertySelect.appendChild(option);
-            });
+            currentProperty = numericProps[0] ?? null;
 
-            breaks = computeBreaks(geojsonData, currentProperty);
+            breaks = currentProperty ? computeBreaks(geojsonData, currentProperty) : [];
 
             geojsonLayer = L.geoJSON(geojsonData, {
                 style: styleFeature,
@@ -285,12 +291,8 @@
                         },
                         click: function () {
                             const p = feature.properties;
-                            layer.bindPopup(
-                                '<b>ID:</b> ' + (p.id ?? 'n/a') + '<br/>' +
-                                '<b>Country:</b> ' + (p.Country ?? 'n/a') + '<br/>' +
-                                '<b>Admin Level 1:</b> ' + (p.Admin_Level_1 ?? 'n/a') + '<br/>' +
-                                '<b>' + currentProperty + ':</b> ' + (p[currentProperty] ?? 'n/a')
-                            ).openPopup();
+                            const table = buildPropertiesTable(p);
+                            layer.bindPopup('<h4>Feature attributes</h4>' + table).openPopup();
                         }
                     });
                 }
@@ -298,22 +300,16 @@
 
             map.fitBounds(geojsonLayer.getBounds());
             updateLegend();
-            meta.innerHTML = `${geojsonData.features.length.toLocaleString()} features loaded. ${numericProps.length} numeric properties available.`;
+            metaControl.update({
+                featureCount: geojsonData.features.length,
+                numericCount: numericProps.length,
+                propertyName: currentProperty
+            });
         })
         .catch(err => {
             console.error('Error loading GeoJSON:', err);
-            meta.textContent = 'Failed to load data.';
+            metaControl.update({ propertyName: 'Failed to load data.' });
         });
-
-    // 7. Handle column selection changes
-    propertySelect.addEventListener('change', function () {
-        currentProperty = this.value;
-        if (!geojsonData || !geojsonLayer) return;
-
-        breaks = computeBreaks(geojsonData, currentProperty);
-        geojsonLayer.setStyle(styleFeature);
-        updateLegend();
-    });
 </script>
 
 </body>
