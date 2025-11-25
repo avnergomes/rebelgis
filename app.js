@@ -142,26 +142,43 @@ function handleGeoJSONLoad(geojson) {
 
 async function loadBundledGeoJSON() {
     const loadedFeatures = [];
+    const statusLines = bundledGeojsonFiles.map(file => `<li>${file}: pending</li>`);
     const contentDiv = document.getElementById('attributeContent');
-    contentDiv.innerHTML = '<p class="info-text">Loading bundled GeoJSON files...</p>';
+    contentDiv.innerHTML = `
+        <p class="info-text">Loading bundled GeoJSON files...</p>
+        <ul class="info-list">${statusLines.join('')}</ul>
+    `;
 
-    for (const filename of bundledGeojsonFiles) {
+    const statusListItems = contentDiv.querySelectorAll('li');
+
+    await Promise.all(bundledGeojsonFiles.map(async (filename, index) => {
+        const statusItem = statusListItems[index];
+        const updateStatus = (text, isError = false) => {
+            statusItem.textContent = `${filename}: ${text}`;
+            statusItem.className = isError ? 'info-error' : '';
+        };
+
         try {
-            const response = await fetch(filename);
+            const fileUrl = new URL(filename, window.location.href).toString();
+            updateStatus('loading');
+
+            const response = await fetch(fileUrl, { cache: 'no-cache' });
             if (!response.ok) {
-                throw new Error(`Failed to load ${filename} (status ${response.status})`);
+                throw new Error(`status ${response.status}`);
             }
 
             const geojson = await response.json();
             if (!Array.isArray(geojson.features)) {
-                throw new Error(`${filename} is missing a features array`);
+                throw new Error('missing features array');
             }
 
             loadedFeatures.push(...geojson.features);
+            updateStatus('loaded');
         } catch (error) {
-            console.error('Error loading bundled GeoJSON:', error);
+            console.error(`Error loading bundled GeoJSON (${filename}):`, error);
+            updateStatus('failed', true);
         }
-    }
+    }));
 
     if (loadedFeatures.length === 0) {
         const errorMessage = 'Unable to load bundled GeoJSON files.';
