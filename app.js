@@ -3,6 +3,11 @@ let map;
 let geojsonLayer;
 let currentGeoJSON;
 const munrollAddressField = 'MunRoll_Property Address';
+const bundledGeojsonFiles = [
+    'geo_part01.geojson',
+    'geo_part02.geojson',
+    'geo_part03.geojson'
+];
 
 // Initialize the map
 function initMap() {
@@ -136,19 +141,41 @@ function handleGeoJSONLoad(geojson) {
 }
 
 async function loadBundledGeoJSON() {
-    try {
-        const response = await fetch('sample_data.geojson');
-        if (!response.ok) {
-            throw new Error(`Failed to load sample data (status ${response.status})`);
-        }
+    const loadedFeatures = [];
+    const contentDiv = document.getElementById('attributeContent');
+    contentDiv.innerHTML = '<p class="info-text">Loading bundled GeoJSON files...</p>';
 
-        const geojson = await response.json();
-        handleGeoJSONLoad(geojson);
-    } catch (error) {
-        console.error('Error loading bundled GeoJSON:', error);
-        const contentDiv = document.getElementById('attributeContent');
-        contentDiv.innerHTML = `<p class="info-text">${error.message}</p>`;
+    for (const filename of bundledGeojsonFiles) {
+        try {
+            const response = await fetch(filename);
+            if (!response.ok) {
+                throw new Error(`Failed to load ${filename} (status ${response.status})`);
+            }
+
+            const geojson = await response.json();
+            if (!Array.isArray(geojson.features)) {
+                throw new Error(`${filename} is missing a features array`);
+            }
+
+            loadedFeatures.push(...geojson.features);
+        } catch (error) {
+            console.error('Error loading bundled GeoJSON:', error);
+        }
     }
+
+    if (loadedFeatures.length === 0) {
+        const errorMessage = 'Unable to load bundled GeoJSON files.';
+        contentDiv.innerHTML = `<p class="info-text">${errorMessage}</p>`;
+        throw new Error(errorMessage);
+    }
+
+    const combinedGeojson = {
+        type: 'FeatureCollection',
+        features: loadedFeatures
+    };
+
+    contentDiv.innerHTML = '<p class="info-text">Click on a polygon to view its attributes</p>';
+    handleGeoJSONLoad(combinedGeojson);
 }
 
 // Initialize map on page load
