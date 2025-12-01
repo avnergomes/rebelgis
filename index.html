@@ -173,11 +173,11 @@
         const raw = feature.properties?.[targetProperty];
         const isNA = isMissingFolio(raw);
         return {
-            fillColor: isNA ? '#cccccc' : '#2b8cbe',
-            weight: 1,
-            opacity: 1,
-            color: '#555',
-            fillOpacity: 0.7
+            fillColor: isNA ? '#d62341' : '#3a9cde',
+            weight: 0,
+            opacity: 0,
+            color: 'transparent',
+            fillOpacity: 0.85
         };
     }
 
@@ -204,8 +204,8 @@
         const { folioOk = 0, folioMissing = 0 } = counts || {};
         legend._div.innerHTML = `
             <b>FOLIO Status</b><br/>
-            <i style="background:#2b8cbe"></i> FOLIO OK (${folioOk.toLocaleString()})<br/>
-            <i style="background:#cccccc"></i> No FOLIO Match (${folioMissing.toLocaleString()})
+            <i style="background:#3a9cde"></i> FOLIO OK (${folioOk.toLocaleString()})<br/>
+            <i style="background:#d62341"></i> No FOLIO Match (${folioMissing.toLocaleString()})
         `;
     }
 
@@ -234,9 +234,7 @@
                         mouseover: function (e) {
                             const target = e.target;
                             target.setStyle({
-                                weight: 2,
-                                color: '#000',
-                                fillOpacity: 0.9
+                                fillOpacity: 1
                             });
                             if (!L.Browser.ie && !L.Browser.opera && !L.Browser.edge) {
                                 target.bringToFront();
