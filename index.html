@@ -17,9 +17,28 @@
             height: 100%;
             margin: 0;
         }
-        #map {
+        #app {
+            display: flex;
             height: 100%;
-            width: 100%;
+        }
+        #map {
+            flex: 1;
+            height: 100vh;
+        }
+        #sidebar {
+            width: 360px;
+            max-width: 40vw;
+            overflow-y: auto;
+            background: rgba(255, 255, 255, 0.95);
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+            padding: 12px;
+            font: 13px/1.3 system-ui, sans-serif;
+        }
+        #sidebar h3 {
+            margin: 0 0 8px;
+        }
+        #sidebar .placeholder {
+            color: #666;
         }
         .info {
             padding: 6px 8px;
@@ -64,7 +83,13 @@
 </head>
 <body>
 
-<div id="map"></div>
+<div id="app">
+    <div id="map"></div>
+    <div id="sidebar">
+        <h3>Feature attributes</h3>
+        <div class="placeholder">Click a polygon to view its properties.</div>
+    </div>
+</div>
 
 <!-- Leaflet JS -->
 <script
@@ -80,16 +105,32 @@
         zoom: 2
     });
 
-    // Base map
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
+    // Base maps
+    const baseLayers = {
+        'OpenStreetMap': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; OpenStreetMap contributors'
+        }),
+        'Satellite': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            maxZoom: 19,
+            attribution: 'Tiles &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community'
+        }),
+        'Gray': L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            maxZoom: 19,
+            attribution: '&copy; OpenStreetMap contributors & CartoDB'
+        }),
+        'Terrain': L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+            maxZoom: 17,
+            attribution: 'Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; OpenTopoMap'
+        })
+    };
 
-    let currentProperty = null;
+    baseLayers['OpenStreetMap'].addTo(map);
+    L.control.layers(baseLayers, null, { position: 'topleft' }).addTo(map);
+
+    const targetProperty = 'MunRoll_Property Address';
     let geojsonLayer = null;
     let geojsonData = null;
-    let breaks = [];
 
     const geojsonPaths = [
         'data/geo_part01.geojson',
@@ -105,11 +146,10 @@
         return this._div;
     };
     metaControl.update = function (props = {}) {
-        const { featureCount = 0, numericCount = 0, propertyName = '' } = props;
+        const { featureCount = 0, propertyCount = 0 } = props;
         this._div.innerHTML = `
             <div><strong>${featureCount.toLocaleString()} features loaded</strong></div>
-            <div>${numericCount} numeric properties</div>
-            <div>${propertyName ? 'Visualizing: <b>' + propertyName + '</b>' : 'No numeric property found'}</div>
+            <div>${propertyCount} target property</div>
         `;
     };
     metaControl.addTo(map);
@@ -124,69 +164,20 @@
         }, { type: 'FeatureCollection', features: [] });
     }
 
-    function getNumericProperties(featureCollection) {
-        const numericKeys = new Set();
-        featureCollection.features.forEach(f => {
-            Object.entries(f.properties || {}).forEach(([key, value]) => {
-                if (value !== null && value !== '' && !Array.isArray(value) && !isNaN(Number(value))) {
-                    numericKeys.add(key);
-                }
-            });
-        });
-        return Array.from(numericKeys).sort();
-    }
-
-    // 3. Color ramp and style functions
-    function getColor(d) {
-        if (d == null || isNaN(d)) return '#cccccc';
-        return d > breaks[4] ? '#800026' :
-               d > breaks[3] ? '#BD0026' :
-               d > breaks[2] ? '#E31A1C' :
-               d > breaks[1] ? '#FC4E2A' :
-               d > breaks[0] ? '#FD8D3C' :
-                               '#FEB24C';
-    }
-
-    function computeBreaks(featureCollection, property) {
-        const values = featureCollection.features
-            .map(f => f.properties[property])
-            .filter(v => v !== null && v !== undefined && !isNaN(v))
-            .map(Number)
-            .sort((a, b) => a - b);
-
-        if (!values.length) return [0, 1, 2, 3, 4];
-
-        const n = values.length;
-
-        function quantile(q) {
-            const pos = (n - 1) * q;
-            const base = Math.floor(pos);
-            const rest = pos - base;
-            if (values[base + 1] !== undefined) {
-                return values[base] + rest * (values[base + 1] - values[base]);
-            } else {
-                return values[base];
-            }
-        }
-
-        // 5 class quantiles
-        return [
-            quantile(0.20),
-            quantile(0.40),
-            quantile(0.60),
-            quantile(0.80),
-            quantile(1.00)
-        ];
+    // 3. Color and style functions for MunRoll_Property Address presence
+    function isMissingFolio(raw) {
+        return raw === '#N/A' || raw === null || raw === undefined || raw === '';
     }
 
     function styleFeature(feature) {
-        const value = currentProperty ? Number(feature.properties[currentProperty]) : null;
+        const raw = feature.properties?.[targetProperty];
+        const isNA = isMissingFolio(raw);
         return {
-            fillColor: currentProperty ? getColor(value) : '#cccccc',
-            weight: 1,
-            opacity: 1,
-            color: '#555',
-            fillOpacity: 0.7
+            fillColor: isNA ? '#d62341' : '#3a9cde',
+            weight: 0,
+            opacity: 0,
+            color: 'transparent',
+            fillOpacity: 0.85
         };
     }
 
@@ -201,35 +192,7 @@
         return `<table class="popup-table">${rows}</table>`;
     }
 
-    // 4. Info control (top-right)
-    const info = L.control({position: 'topright'});
-    info.onAdd = function () {
-        this._div = L.DomUtil.create('div', 'info');
-        this.update();
-        return this._div;
-    };
-    info.update = function (props) {
-        if (!props) {
-            this._div.innerHTML = '<h4>Feature data</h4>Hover over a polygon';
-            return;
-        }
-
-        const summary = [
-            `<b>ID:</b> ${props.id ?? 'n/a'}`,
-            `<b>Country:</b> ${props.Country ?? 'n/a'}`,
-            `<b>Admin Level 1:</b> ${props.Admin_Level_1 ?? 'n/a'}`,
-            `<b>Unit:</b> ${props.Unit ?? 'n/a'}`
-        ];
-
-        if (currentProperty) {
-            summary.push(`<b>${currentProperty}:</b> ${props[currentProperty] ?? 'n/a'}`);
-        }
-
-        this._div.innerHTML = '<h4>Feature data</h4>' + summary.join('<br/>');
-    };
-    info.addTo(map);
-
-    // 5. Legend control (bottom-right)
+    // 4. Legend control (bottom-right)
     const legend = L.control({position: 'bottomright'});
     legend.onAdd = function () {
         this._div = L.DomUtil.create('div', 'info legend');
@@ -237,37 +200,32 @@
     };
     legend.addTo(map);
 
-    function updateLegend() {
-        if (!currentProperty || !breaks || !breaks.length) {
-            legend._div.innerHTML = 'No numeric data available';
-            return;
-        }
-        const desc = `Quantile breaks for <strong>${currentProperty}</strong>`;
-        let labels = [];
-        for (let i = 0; i < breaks.length; i++) {
-            const from = i === 0 ? breaks[0] : breaks[i - 1];
-            const to = breaks[i];
-            const mid = (from + to) / 2;
-            labels.push(
-                '<i style="background:' + getColor(mid) + '"></i> ' +
-                from.toFixed(2) + ' – ' + to.toFixed(2)
-            );
-        }
-        legend._div.innerHTML =
-            '<b>' + currentProperty + '</b><br/>' +
-            '<small>' + desc + '</small><br/><br/>' +
-            labels.join('<br>');
+    function updateLegend(counts) {
+        const { folioOk = 0, folioMissing = 0 } = counts || {};
+        legend._div.innerHTML = `
+            <b>FOLIO Status</b><br/>
+            <i style="background:#3a9cde"></i> FOLIO OK (${folioOk.toLocaleString()})<br/>
+            <i style="background:#d62341"></i> No FOLIO Match (${folioMissing.toLocaleString()})
+        `;
     }
 
-    // 6. Load the GeoJSON parts and render
+    function countFolioStatuses(features) {
+        return features.reduce((acc, feature) => {
+            const raw = feature.properties?.[targetProperty];
+            if (isMissingFolio(raw)) {
+                acc.folioMissing += 1;
+            } else {
+                acc.folioOk += 1;
+            }
+            return acc;
+        }, { folioOk: 0, folioMissing: 0 });
+    }
+
+    // 5. Load the GeoJSON parts and render
     loadGeojsonParts()
         .then(data => {
             geojsonData = data;
-
-            const numericProps = getNumericProperties(geojsonData);
-            currentProperty = numericProps[0] ?? null;
-
-            breaks = currentProperty ? computeBreaks(geojsonData, currentProperty) : [];
+            const folioCounts = countFolioStatuses(geojsonData.features);
 
             geojsonLayer = L.geoJSON(geojsonData, {
                 style: styleFeature,
@@ -276,39 +234,34 @@
                         mouseover: function (e) {
                             const target = e.target;
                             target.setStyle({
-                                weight: 2,
-                                color: '#000',
-                                fillOpacity: 0.9
+                                fillOpacity: 1
                             });
                             if (!L.Browser.ie && !L.Browser.opera && !L.Browser.edge) {
                                 target.bringToFront();
                             }
-                            info.update(feature.properties);
                         },
                         mouseout: function (e) {
                             geojsonLayer.resetStyle(e.target);
-                            info.update();
                         },
                         click: function () {
                             const p = feature.properties;
                             const table = buildPropertiesTable(p);
-                            layer.bindPopup('<h4>Feature attributes</h4>' + table).openPopup();
+                            document.getElementById('sidebar').innerHTML = `<h3>Feature attributes</h3>${table}`;
                         }
                     });
                 }
             }).addTo(map);
 
             map.fitBounds(geojsonLayer.getBounds());
-            updateLegend();
+            updateLegend(folioCounts);
             metaControl.update({
                 featureCount: geojsonData.features.length,
-                numericCount: numericProps.length,
-                propertyName: currentProperty
+                propertyCount: 1
             });
         })
         .catch(err => {
             console.error('Error loading GeoJSON:', err);
-            metaControl.update({ propertyName: 'Failed to load data.' });
+            metaControl.update({ featureCount: 0, propertyCount: 0 });
         });
 </script>
 
