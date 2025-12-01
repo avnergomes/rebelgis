@@ -146,11 +146,10 @@
         return this._div;
     };
     metaControl.update = function (props = {}) {
-        const { featureCount = 0, propertyCount = 0, propertyName = '' } = props;
+        const { featureCount = 0, propertyCount = 0 } = props;
         this._div.innerHTML = `
             <div><strong>${featureCount.toLocaleString()} features loaded</strong></div>
             <div>${propertyCount} target property</div>
-            <div>${propertyName ? 'Visualizing: <b>' + propertyName + '</b>' : 'Property not found'}</div>
         `;
     };
     metaControl.addTo(map);
@@ -166,9 +165,13 @@
     }
 
     // 3. Color and style functions for MunRoll_Property Address presence
+    function isMissingFolio(raw) {
+        return raw === '#N/A' || raw === null || raw === undefined || raw === '';
+    }
+
     function styleFeature(feature) {
         const raw = feature.properties?.[targetProperty];
-        const isNA = raw === '#N/A' || raw === null || raw === undefined || raw === '';
+        const isNA = isMissingFolio(raw);
         return {
             fillColor: isNA ? '#cccccc' : '#2b8cbe',
             weight: 1,
@@ -189,34 +192,7 @@
         return `<table class="popup-table">${rows}</table>`;
     }
 
-    // 4. Info control (top-right)
-    const info = L.control({position: 'topright'});
-    info.onAdd = function () {
-        this._div = L.DomUtil.create('div', 'info');
-        this.update();
-        return this._div;
-    };
-    info.update = function (props) {
-        if (!props) {
-            this._div.innerHTML = '<h4>Feature data</h4>Click a polygon to view its data';
-            return;
-        }
-
-        const summary = [
-            `<b>ID:</b> ${props.id ?? 'n/a'}`,
-            `<b>Country:</b> ${props.Country ?? 'n/a'}`,
-            `<b>Admin Level 1:</b> ${props.Admin_Level_1 ?? 'n/a'}`,
-            `<b>Unit:</b> ${props.Unit ?? 'n/a'}`
-        ];
-
-        const munVal = props[targetProperty];
-        summary.push(`<b>${targetProperty}:</b> ${munVal ?? 'n/a'}`);
-
-        this._div.innerHTML = '<h4>Feature data</h4>' + summary.join('<br/>');
-    };
-    info.addTo(map);
-
-    // 5. Legend control (bottom-right)
+    // 4. Legend control (bottom-right)
     const legend = L.control({position: 'bottomright'});
     legend.onAdd = function () {
         this._div = L.DomUtil.create('div', 'info legend');
@@ -224,18 +200,32 @@
     };
     legend.addTo(map);
 
-    function updateLegend() {
+    function updateLegend(counts) {
+        const { folioOk = 0, folioMissing = 0 } = counts || {};
         legend._div.innerHTML = `
-            <b>${targetProperty}</b><br/>
-            <i style="background:#2b8cbe"></i> Has address<br/>
-            <i style="background:#cccccc"></i> #N/A / missing
+            <b>FOLIO Status</b><br/>
+            <i style="background:#2b8cbe"></i> FOLIO OK (${folioOk.toLocaleString()})<br/>
+            <i style="background:#cccccc"></i> No FOLIO Match (${folioMissing.toLocaleString()})
         `;
     }
 
-    // 6. Load the GeoJSON parts and render
+    function countFolioStatuses(features) {
+        return features.reduce((acc, feature) => {
+            const raw = feature.properties?.[targetProperty];
+            if (isMissingFolio(raw)) {
+                acc.folioMissing += 1;
+            } else {
+                acc.folioOk += 1;
+            }
+            return acc;
+        }, { folioOk: 0, folioMissing: 0 });
+    }
+
+    // 5. Load the GeoJSON parts and render
     loadGeojsonParts()
         .then(data => {
             geojsonData = data;
+            const folioCounts = countFolioStatuses(geojsonData.features);
 
             geojsonLayer = L.geoJSON(geojsonData, {
                 style: styleFeature,
@@ -259,23 +249,21 @@
                             const p = feature.properties;
                             const table = buildPropertiesTable(p);
                             document.getElementById('sidebar').innerHTML = `<h3>Feature attributes</h3>${table}`;
-                            info.update(p);
                         }
                     });
                 }
             }).addTo(map);
 
             map.fitBounds(geojsonLayer.getBounds());
-            updateLegend();
+            updateLegend(folioCounts);
             metaControl.update({
                 featureCount: geojsonData.features.length,
-                propertyCount: 1,
-                propertyName: targetProperty
+                propertyCount: 1
             });
         })
         .catch(err => {
             console.error('Error loading GeoJSON:', err);
-            metaControl.update({ propertyName: 'Failed to load data.' });
+            metaControl.update({ featureCount: 0, propertyCount: 0 });
         });
 </script>
 
