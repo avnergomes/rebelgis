@@ -64,6 +64,26 @@
             margin-right: 6px;
             opacity: 0.7;
         }
+        .opacity-control {
+            min-width: 200px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .opacity-control label {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        .opacity-control .opacity-value {
+            font-variant-numeric: tabular-nums;
+            margin-left: 8px;
+        }
+        .opacity-control input[type="range"] {
+            width: 100%;
+        }
         .popup-table {
             border-collapse: collapse;
             width: 100%;
@@ -131,6 +151,7 @@
     const targetProperty = 'MunRoll_Property Address';
     let geojsonLayer = null;
     let geojsonData = null;
+    let layerOpacity = 0.85;
 
     const geojsonPaths = [
         'data/geo_part01.geojson',
@@ -177,8 +198,15 @@
             weight: 0,
             opacity: 0,
             color: 'transparent',
-            fillOpacity: 0.85
+            fillOpacity: layerOpacity
         };
+    }
+
+    function updateLayerOpacity(newOpacity) {
+        layerOpacity = newOpacity;
+        if (geojsonLayer) {
+            geojsonLayer.setStyle(styleFeature);
+        }
     }
 
     function buildPropertiesTable(props = {}) {
@@ -234,7 +262,7 @@
                         mouseover: function (e) {
                             const target = e.target;
                             target.setStyle({
-                                fillOpacity: 1
+                                fillOpacity: Math.min(1, layerOpacity + 0.15)
                             });
                             if (!L.Browser.ie && !L.Browser.opera && !L.Browser.edge) {
                                 target.bringToFront();
@@ -263,6 +291,43 @@
             console.error('Error loading GeoJSON:', err);
             metaControl.update({ featureCount: 0, propertyCount: 0 });
         });
+
+    // Opacity control (top-right)
+    const opacityControl = L.control({ position: 'topright' });
+    opacityControl.onAdd = function () {
+        const container = L.DomUtil.create('div', 'info opacity-control');
+        const label = L.DomUtil.create('label', '', container);
+        label.setAttribute('for', 'opacity-slider');
+        label.innerHTML = '<span>Polygon opacity</span><span class="opacity-value" id="opacity-value"></span>';
+
+        const slider = L.DomUtil.create('input', '', container);
+        slider.type = 'range';
+        slider.id = 'opacity-slider';
+        slider.min = '0';
+        slider.max = '100';
+        slider.step = '5';
+        slider.value = String(Math.round(layerOpacity * 100));
+
+        const valueDisplay = label.querySelector('#opacity-value');
+        const updateDisplay = (value) => {
+            valueDisplay.textContent = `${Math.round(value)}%`;
+        };
+
+        updateDisplay(Number(slider.value));
+
+        slider.addEventListener('input', (e) => {
+            const percent = Number(e.target.value);
+            const normalized = percent / 100;
+            updateLayerOpacity(normalized);
+            updateDisplay(percent);
+        });
+
+        L.DomEvent.disableClickPropagation(container);
+        L.DomEvent.disableScrollPropagation(container);
+
+        return container;
+    };
+    opacityControl.addTo(map);
 </script>
 
 </body>
